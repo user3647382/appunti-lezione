@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+  <title>Appunti Lezione</title>
+  <meta name="theme-color" content="#4f46e5">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Appunti">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icon-180.png">
+  <link rel="icon" href="icon-192.png">
+  <link rel="stylesheet" href="mobile.css">
+  <script src="../vendor/pdf.min.js"></script>
+  <script src="../vendor/fflate.min.js"></script>
+  <script type="module" src="mobile.js"></script>
+</head>
+<body>
+  <!-- Elenco delle lezioni -->
+  <div id="home" class="screen">
+    <header class="top">
+      <h1>📝 Appunti Lezione</h1>
+      <button id="nameBtn" class="ghost" title="Il tuo nome"></button>
+    </header>
+    <div id="installTip" class="tip" hidden></div>
+    <div id="lessonList"></div>
+    <div class="home-actions">
+      <button id="newLesson" class="primary big">＋ Nuova lezione</button>
+      <label class="btn big">📥 Importa<input type="file" id="importInput" accept=".lezione,.zip,application/zip,application/octet-stream" hidden></label>
+    </div>
+    <p id="homeInfo" class="hint"></p>
+  </div>
+
+  <!-- Lezione aperta -->
+  <div id="lesson" class="screen" hidden>
+    <header class="top">
+      <button id="back" class="ghost" aria-label="Torna alle lezioni">‹</button>
+      <input id="title" placeholder="Titolo della lezione" enterkeyhint="done">
+      <button id="menuBtn" class="ghost" aria-label="Altre azioni">⋯</button>
+    </header>
+
+    <div id="recBar">
+      <button id="recBtn" class="rec">● Registra</button>
+      <span id="recTime">00:00</span>
+      <span class="meter" aria-hidden="true"><i id="level"></i></span>
+      <span id="recInfo"></span>
+    </div>
+    <div id="warn" hidden></div>
+
+    <main id="work">
+      <section id="slidePane">
+        <div id="stage">
+          <div id="canvasBox">
+            <canvas id="slideCanvas"></canvas>
+            <canvas id="drawCanvas"></canvas>
+            <canvas id="strokeCanvas"></canvas>
+          </div>
+        </div>
+        <div class="toolbar">
+          <button id="prev" aria-label="Slide precedente">◀</button>
+          <span id="pageLabel"></span>
+          <button id="next" aria-label="Slide successiva">▶</button>
+          <span class="sep"></span>
+          <button data-tool="none" class="active" aria-label="Sfoglia">✋</button>
+          <button data-tool="pen" aria-label="Penna">✏️</button>
+          <button data-tool="hl" aria-label="Evidenziatore">🖍</button>
+          <button data-tool="eraser" aria-label="Gomma">🧽</button>
+          <input type="color" id="color" value="#e11d48" aria-label="Colore">
+          <button id="undo" aria-label="Annulla tratto">↶</button>
+        </div>
+      </section>
+
+      <section id="notesPane">
+        <div id="notesLabel" class="pane-head"></div>
+        <div id="notes" contenteditable="true" data-placeholder="Scrivi qui i tuoi appunti per questa slide…"></div>
+        <div id="photoStrip" hidden></div>
+        <details id="profBox" hidden>
+          <summary>🎙 Cosa ha detto il professore su questa slide</summary>
+          <div id="profText"></div>
+        </details>
+      </section>
+    </main>
+
+    <nav id="actions">
+      <button id="starBtn" class="big">⭐ Importante</button>
+      <label class="btn big">📷 Foto<input type="file" id="photoInput" accept="image/*" capture="environment" hidden></label>
+      <button id="dimBtn" class="big" title="Schermo scuro per risparmiare batteria">🌙</button>
+    </nav>
+  </div>
+
+  <!-- Menu della lezione -->
+  <div id="sheet" class="overlay" hidden>
+    <div class="sheet-body">
+      <label class="btn row">📄 Carica le slide (PDF)<input type="file" id="pdfInput" accept="application/pdf" hidden></label>
+      <label class="btn row">✍️ Aggiungi foto di appunti a mano<input type="file" id="handInput" accept="image/*" multiple hidden></label>
+      <button id="shareBtn" class="row primary">📤 Invia la lezione al Mac o ai compagni</button>
+      <button id="deleteBtn" class="row danger">🗑 Elimina questa lezione</button>
+      <button id="sheetClose" class="row">Chiudi</button>
+    </div>
+  </div>
+
+  <!-- Invio della lezione -->
+  <div id="shareBox" class="overlay" hidden>
+    <div class="sheet-body">
+      <h2>📤 Invia la lezione</h2>
+      <p id="shareInfo"></p>
+      <button id="shareGo" class="row primary" hidden>Condividi (AirDrop, WhatsApp, Drive…)</button>
+      <a id="shareSave" class="btn row" hidden>⬇ Salva il file sul dispositivo</a>
+      <p class="hint">Sul Mac: <b>⋯ → Importa una lezione</b>, poi <b>🎧 Audio → Trascrivi dalla registrazione</b>.</p>
+      <button id="shareClose" class="row">Chiudi</button>
+    </div>
+  </div>
+
+  <!-- Foto ingrandita -->
+  <div id="viewer" class="overlay" hidden>
+    <img id="viewerImg" alt="">
+    <div class="viewer-bar">
+      <button id="viewerDelete" class="danger">🗑 Elimina</button>
+      <button id="viewerClose" class="primary">Chiudi</button>
+    </div>
+  </div>
+
+  <!-- Schermo scuro: la registrazione continua, lo schermo consuma meno -->
+  <div id="dim" hidden>
+    <div><div id="dimTime"></div><div id="dimHint">La registrazione continua.<br>Tocca per tornare all'app.</div></div>
+  </div>
+
+  <div id="toast" hidden></div>
+</body>
+</html>
