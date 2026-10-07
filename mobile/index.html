@@ -73,12 +73,28 @@
       </section>
 
       <section id="notesPane">
-        <div id="notesLabel" class="pane-head"></div>
+        <div class="pane-head">
+          <span id="notesLabel"></span>
+          <span class="spacer"></span>
+          <!-- come prendere appunti: tastiera, oppure a mano su foglio bianco o a quadretti -->
+          <div id="noteMode" class="seg" role="group" aria-label="Come prendere appunti">
+            <button data-mode="keys" title="Scrivi con la tastiera">⌨️<span> Tastiera</span></button>
+            <button data-mode="blank" title="Scrivi a mano su foglio bianco">▢<span> Bianco</span></button>
+            <button data-mode="grid" title="Scrivi a mano su foglio a quadretti">▦<span> Quadretti</span></button>
+          </div>
+          <button id="notesFull" class="mini" title="Appunti a tutto schermo" aria-label="Appunti a tutto schermo">⤢</button>
+        </div>
         <div id="notes" contenteditable="true" data-placeholder="Scrivi qui i tuoi appunti per questa slide…"></div>
+        <div id="inkBox" hidden>
+          <canvas id="inkCanvas"></canvas>
+          <canvas id="inkLive"></canvas>
+          <div id="inkHint"></div>
+        </div>
         <div id="photoStrip" hidden></div>
         <details id="profBox" hidden>
           <summary>🎙 Cosa ha detto il professore su questa slide</summary>
           <div id="profText"></div>
+          <div id="interim"></div>
         </details>
       </section>
     </main>
@@ -95,9 +111,33 @@
     <div class="sheet-body">
       <label class="btn row">📄 Carica le slide (PDF)<input type="file" id="pdfInput" accept="application/pdf" hidden></label>
       <label class="btn row">✍️ Aggiungi foto di appunti a mano<input type="file" id="handInput" accept="image/*" multiple hidden></label>
+      <button id="modeBtn" class="row"></button>
+      <label class="btn row lang">🌍 Lingua della lezione
+        <select id="lang">
+          <option value="it-IT">Italiano</option><option value="en-US">English</option><option value="es-ES">Español</option>
+          <option value="fr-FR">Français</option><option value="de-DE">Deutsch</option>
+        </select>
+      </label>
       <button id="shareBtn" class="row primary">📤 Invia la lezione al Mac o ai compagni</button>
+      <button id="textBtn" class="row">📝 Condividi appunti e trascrizione come testo</button>
       <button id="deleteBtn" class="row danger">🗑 Elimina questa lezione</button>
       <button id="sheetClose" class="row">Chiudi</button>
+    </div>
+  </div>
+
+  <!-- Registrare l'audio o trascrivere dal vivo -->
+  <div id="modeBox" class="overlay" hidden>
+    <div class="sheet-body">
+      <h2>Come vuoi seguire la lezione?</h2>
+      <button id="modeAudio" class="row choice">
+        <b>🎙 Registra l'audio</b>
+        <span>Il Mac trascrive dopo, con precisione. Funziona senza internet e, se qualcosa si interrompe, l'audio resta. Poi va inviato il file (circa 30 MB all'ora).</span>
+      </button>
+      <button id="modeText" class="row choice">
+        <b>💬 Solo trascrizione dal vivo</b>
+        <span id="modeTextInfo">Il testo compare subito e non c'è audio da inviare. Serve internet: la voce viene mandata ad Apple (iPhone, iPad) o a Google (Android) per essere trascritta. È meno precisa con il professore lontano e, se si interrompe, quelle parole sono perse.</span>
+      </button>
+      <button id="modeClose" class="row">Annulla</button>
     </div>
   </div>
 

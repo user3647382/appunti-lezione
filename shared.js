@@ -1,7 +1,7 @@
 // Parti comuni all'app per Mac (app.js) e a quella per telefoni e tablet (mobile/mobile.js):
 // archivio locale (IndexedDB), registrazione audio che sopravvive a una chiusura improvvisa,
 // foto, e il file ".lezione" con cui una lezione passa da un dispositivo all'altro.
-export const APP_VERSION = '3.0'; // deve coincidere con APP_VERSION in server.py
+export const APP_VERSION = '3.1'; // deve coincidere con APP_VERSION in server.py
 
 export const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 export const fmtTime = (t) => new Date(t).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -66,6 +66,7 @@ export function normalizeLesson(l) {
   l.slideLog ||= [];  // [{t, slide}]: quando è stata aperta ogni slide, per collegare l'audio alle slide
   l.markers ||= [];   // [{t, slide, text}]: momenti segnati con ⭐
   l.photos ||= [];    // [{key, t, slide, kind, type, author, text}]: lavagna e appunti a mano (slide 0 = tutta la lezione)
+  l.inkPages ||= {};  // {slide: {t, paper}}: indice dei fogli scritti a mano (i tratti stanno nell'archivio dei file)
   return l;
 }
 export function newLessonObj(extra = {}) {
@@ -80,6 +81,7 @@ export async function deleteLessonData(lesson) {
   await delFile('pdf:' + lesson.id);
   for (const k of await fileKeys(`audio:${lesson.id}:`)) await delFile(k);
   for (const k of await fileKeys(`photo:${lesson.id}:`)) await delFile(k);
+  for (const k of await fileKeys(`ink:${lesson.id}:`)) await delFile(k);
   await delLesson(lesson.id);
 }
 
@@ -198,8 +200,69 @@ export async function deletePhoto(lesson, p) {
   lesson.photos = lesson.photos.filter((x) => x !== p);
 }
 
+// ---------- Fogli scritti a mano ----------
+// Un foglio per slide, scritto con Apple Pencil o col dito. Ogni tratto è una lista di punti [x, y, spessore, …]
+// su un foglio largo INK_W unità: si ridisegna nitido a qualsiasi dimensione e "annulla" toglie l'ultimo tratto.
+// I fogli stanno nell'archivio per conto loro (ink:<lezione>:<slide>), così salvare un tratto non riscrive la lezione.
+export const INK_W = 1600;
+export const INK_GRID = 40; // lato di un quadretto: circa 5 mm se il foglio è largo come un A4
+const inkKey = (id, n) => `ink:${id}:${n}`;
+export const getInk = (lesson, n) => getFile(inkKey(lesson.id, n));
+export async function putInk(lesson, n, ink) {
+  if (ink.strokes.length) {
+    await putFile(inkKey(lesson.id, n), ink);
+    lesson.inkPages[n] = { t: ink.t, paper: ink.paper };
+  } else {
+    await delFile(inkKey(lesson.id, n));
+    delete lesson.inkPages[n];
+  }
+}
+
+// Disegna un tratto, dal punto `from` in poi (serve mentre si scrive: si aggiunge solo l'ultimo pezzetto).
+// La penna cambia spessore con la pressione, quindi va disegnata segmento per segmento; evidenziatore e gomma
+// hanno spessore fisso e vanno in un percorso unico (l'evidenziatore non deve scurirsi dove i segmenti si toccano).
+export function drawStroke(ctx, s, from = 0) {
+  const p = s.pts, n = p.length / 3;
+  ctx.lineCap = ctx.lineJoin = 'round';
+  ctx.globalCompositeOperation = s.tool === 'eraser' ? 'destination-out' : 'source-over';
+  ctx.globalAlpha = s.tool === 'hl' ? 0.35 : 1;
+  ctx.strokeStyle = ctx.fillStyle = s.color;
+  if (n === 1) {
+    ctx.beginPath(); ctx.arc(p[0], p[1], p[2] / 2, 0, 7); ctx.fill();
+  } else if (s.tool === 'pen') {
+    for (let i = Math.max(1, from); i < n; i++) {
+      ctx.lineWidth = (p[i * 3 - 1] + p[i * 3 + 2]) / 2;
+      ctx.beginPath(); ctx.moveTo(p[i * 3 - 3], p[i * 3 - 2]); ctx.lineTo(p[i * 3], p[i * 3 + 1]); ctx.stroke();
+    }
+  } else {
+    ctx.lineWidth = p[2];
+    ctx.beginPath(); ctx.moveTo(p[Math.max(0, from - 1) * 3], p[Math.max(0, from - 1) * 3 + 1]);
+    for (let i = Math.max(1, from); i < n; i++) ctx.lineTo(p[i * 3], p[i * 3 + 1]);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+}
+// Ridisegna i tratti che cadono tra `top` e `bottom` (in unità del foglio). s.b = [y minima, y massima] del tratto.
+export function renderInk(ctx, ink, top = 0, bottom = Infinity) {
+  for (const s of ink.strokes) if (!s.b || (s.b[1] >= top && s.b[0] <= bottom)) drawStroke(ctx, s);
+}
+// Il foglio come immagine su fondo bianco, tagliato dove finisce la scrittura: per il Mac, che ne legge il testo.
+export function inkBlob(ink) {
+  const used = Math.max(0, ...ink.strokes.filter((s) => s.tool !== 'eraser').map((s) => s.b[1]));
+  const layer = document.createElement('canvas'); // i tratti su un livello trasparente: la gomma toglie solo l'inchiostro
+  layer.width = INK_W; layer.height = Math.min(ink.h, Math.max(500, Math.ceil(used + 80)));
+  renderInk(layer.getContext('2d'), ink, 0, layer.height);
+  const c = document.createElement('canvas');
+  c.width = layer.width; c.height = layer.height;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+  ctx.drawImage(layer, 0, 0);
+  return new Promise((res) => c.toBlob(res, 'image/jpeg', 0.9));
+}
+
 // ---------- File .lezione ----------
-// È uno zip non compresso: lezione.json (testi, disegni, tempi) + slide.pdf + audio/ + foto/.
+// È uno zip non compresso: lezione.json (testi, disegni, tempi) + slide.pdf + audio/ + foto/ + fogli/ (scritti a mano).
 // light = senza PDF e senza audio: pochi MB, usato per le copie di sicurezza automatiche.
 export async function exportLesson(lesson, { light = false, onProgress = () => {} } = {}) {
   const { Zip, ZipPassThrough, strToU8 } = globalThis.fflate;
@@ -218,6 +281,7 @@ export async function exportLesson(lesson, { light = false, onProgress = () => {
     return { key: a.key, start: a.start, end: a.end, mime: a.mime };
   });
   copy.photos.forEach((p, i) => files.push({ path: `foto/${i}.jpg`, role: 'photo', key: p.key, type: p.type || 'image/jpeg' }));
+  for (const n of Object.keys(copy.inkPages)) files.push({ path: `fogli/${n}.json`, role: 'ink', key: inkKey(lesson.id, n), type: 'application/json' });
 
   const meta = { app: 'appunti-lezione', format: 1, version: APP_VERSION, exportedAt: Date.now(), light, lesson: copy, files };
   add('lezione.json').push(strToU8(JSON.stringify(meta)), true);
@@ -231,7 +295,8 @@ export async function exportLesson(lesson, { light = false, onProgress = () => {
       entry.push(new Uint8Array(0), true);
     } else {
       const data = await getFile(f.key);
-      entry.push(data ? new Uint8Array(data instanceof Blob ? await data.arrayBuffer() : data) : new Uint8Array(0), true);
+      entry.push(!data ? new Uint8Array(0) : f.role === 'ink' ? strToU8(JSON.stringify(data))
+        : new Uint8Array(data instanceof Blob ? await data.arrayBuffer() : data), true);
     }
     onProgress(++done / files.length);
   }
@@ -261,7 +326,8 @@ async function storeFiles(pkg, id, roles) {
   for (const f of pkg.files) {
     if (!roles.includes(f.role)) continue;
     const key = f.key.replace(pkg.lesson.id, id);
-    await putFile(f.role === 'audio' ? partKey(key, 0) : key, ownBuffer(f.data));
+    if (f.role === 'ink') await putFile(key, JSON.parse(globalThis.fflate.strFromU8(f.data)));
+    else await putFile(f.role === 'audio' ? partKey(key, 0) : key, ownBuffer(f.data));
     stored.set(f.key, key);
   }
   return stored;
@@ -279,8 +345,10 @@ export async function storePackage(pkg, { copy = false } = {}) {
     if (has('pdf')) await delFile('pdf:' + id);
     if (has('audio')) for (const k of await fileKeys(`audio:${id}:`)) await delFile(k);
     for (const k of await fileKeys(`photo:${id}:`)) await delFile(k);
+    for (const k of await fileKeys(`ink:${id}:`)) await delFile(k);
   }
-  const stored = await storeFiles(pkg, id, ['pdf', 'audio', 'photo']);
+  const stored = await storeFiles(pkg, id, ['pdf', 'audio', 'photo', 'ink']);
+  lesson.inkPages = Object.fromEntries(Object.entries(lesson.inkPages).filter(([n]) => stored.has(inkKey(lesson.id, n))));
   lesson.audio = old && !has('audio') ? normalizeLesson(old).audio
     : lesson.audio.filter((a) => stored.has(a.key)).map((a) => ({ ...a, key: stored.get(a.key), parts: 1 }));
   lesson.photos = lesson.photos.filter((p) => stored.has(p.key)).map((p) => ({ ...p, key: stored.get(p.key) }));
@@ -329,6 +397,17 @@ export async function mergePackage(target, pkg) {
   const photoKeys = await storeFiles(pkg, target.id, ['photo']);
   const photos = src.photos.filter((p) => photoKeys.has(p.key)).map((p) => ({ ...p, key: photoKeys.get(p.key), author: p.author || who }));
   if (photos.length) { target.photos.push(...photos); added.push(`${photos.length} foto`); }
+
+  // i fogli scritti a mano del compagno arrivano come immagini, una per slide (i miei fogli restano miei)
+  let sheets = 0;
+  for (const f of pkg.files.filter((x) => x.role === 'ink')) {
+    const ink = JSON.parse(globalThis.fflate.strFromU8(f.data)), n = +f.path.match(/(\d+)\.json$/)[1];
+    if (!ink.strokes?.length) continue;
+    const photo = await addPhoto(target, await inkBlob(ink), { slide: n, kind: 'mano', author: who, t: ink.t });
+    photo.ink = true;
+    sheets++;
+  }
+  if (sheets) added.push(`${sheets} ${sheets === 1 ? 'foglio scritto' : 'fogli scritti'} a mano`);
 
   if (!target.audio.length && src.audio.length) {
     const audioKeys = await storeFiles(pkg, target.id, ['audio']);

@@ -1,6 +1,6 @@
 // Tiene una copia dell'app sul dispositivo, così si apre e funziona anche senza rete (in aula capita).
 // Con la rete si prende sempre la versione più recente; senza rete, o se la rete è lentissima, la copia salvata.
-const CACHE = 'appunti-lezione-3.0';
+const CACHE = 'appunti-lezione-3.1';
 const SHELL = [
   './', 'mobile.css', 'mobile.js', 'manifest.webmanifest', 'icon-180.png', 'icon-192.png', 'icon-512.png',
   '../shared.js', '../vendor/pdf.min.js', '../vendor/pdf.worker.min.js', '../vendor/fflate.min.js',
